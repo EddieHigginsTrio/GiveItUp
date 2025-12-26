@@ -1,7 +1,8 @@
 #pragma once
 
 #include "Window.hpp"
-#include "Button.hpp"
+#include "InventorySlot.hpp"
+#include "DragDropManager.hpp"
 #include <vector>
 #include <memory>
 #include <functional>
@@ -14,10 +15,11 @@ public:
     static constexpr int GRID_ROWS = 10;
     static constexpr float SLOT_SIZE = 50.f;
     static constexpr float SLOT_PADDING = 5.f;
+    static constexpr float DRAG_THRESHOLD = 5.f;
 
-    InventoryWindow(const sf::Vector2f& position, const sf::Font& font)
+    InventoryWindow(const sf::Vector2f& position, const sf::Font& font, const std::string& title = "Inventory")
         : m_font(font)
-        , m_window(position, calculateWindowSize(), font, "Inventory")
+        , m_window(position, calculateWindowSize(), font, title)
     {
         m_window.setOnClose([this]() {
             m_window.setVisible(false);
@@ -31,20 +33,44 @@ public:
         m_scrollThumb.setSize({10.f, 50.f});
         m_scrollThumb.setFillColor(sf::Color{100, 100, 100});
 
+        // 아이템 배열 초기화
+        m_items.resize(GRID_COLS * GRID_ROWS);
+
         updateScrollbarPosition();
         createSlots();
     }
 
-    void setSlotCallback(std::function<void(int)> callback)
+    void setDragDropManager(DragDropManager* manager)
     {
-        m_slotCallback = std::move(callback);
+        m_dragDropManager = manager;
     }
 
-    void setSlotText(int index, const std::string& text)
+    void setItem(int index, const OptionalItem& item)
     {
-        if (index >= 0 && index < static_cast<int>(m_slots.size()))
+        if (index >= 0 && index < static_cast<int>(m_items.size()))
         {
-            m_slots[index]->setText(text);
+            m_items[index] = item;
+            m_slots[index]->setItem(item);
+        }
+    }
+
+    OptionalItem getItem(int index) const
+    {
+        if (index >= 0 && index < static_cast<int>(m_items.size()))
+        {
+            return m_items[index];
+        }
+        return std::nullopt;
+    }
+
+    void swapItems(int index1, int index2)
+    {
+        if (index1 >= 0 && index1 < static_cast<int>(m_items.size()) &&
+            index2 >= 0 && index2 < static_cast<int>(m_items.size()))
+        {
+            std::swap(m_items[index1], m_items[index2]);
+            m_slots[index1]->setItem(m_items[index1]);
+            m_slots[index2]->setItem(m_items[index2]);
         }
     }
 
@@ -55,6 +81,99 @@ public:
         sf::Vector2f contentPos = m_window.getContentPosition();
         sf::Vector2f contentSize = m_window.getContentSize();
         sf::FloatRect contentBounds(contentPos, contentSize);
+
+        // 드래그 앤 드롭 처리
+        if (m_dragDropManager)
+        {
+            // 드래그 중 마우스 릴리즈 - 드롭 처리
+            if (const auto* mouseReleased = event.getIf<sf::Event::MouseButtonReleased>())
+            {
+                if (mouseReleased->button == sf::Mouse::Button::Left)
+                {
+                    sf::Vector2f mousePos(static_cast<float>(mouseReleased->position.x),
+                                           static_cast<float>(mouseReleased->position.y));
+
+                    if (m_dragDropManager->isDragging())
+                    {
+                        // 이 인벤토리 영역 안에서 드롭했는지 확인
+                        if (m_window.contains(mousePos))
+                        {
+                            int targetSlot = getSlotAtPosition(mousePos);
+                            m_dragDropManager->endDrag(this, targetSlot);
+                            m_isPotentialDrag = false;
+                            return true;
+                        }
+                        // 이 인벤토리 밖이면 다른 인벤토리가 처리하도록 패스
+                        return false;
+                    }
+
+                    if (m_isPotentialDrag)
+                    {
+                        m_isPotentialDrag = false;
+                        return true;
+                    }
+                }
+            }
+
+            // 드래그 시작 감지
+            if (const auto* mousePressed = event.getIf<sf::Event::MouseButtonPressed>())
+            {
+                if (mousePressed->button == sf::Mouse::Button::Left)
+                {
+                    sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
+                                           static_cast<float>(mousePressed->position.y));
+
+                    int slotIndex = getSlotAtPosition(mousePos);
+                    if (slotIndex >= 0 && m_slots[slotIndex]->hasItem())
+                    {
+                        m_isPotentialDrag = true;
+                        m_dragStartPos = mousePos;
+                        m_dragStartSlot = slotIndex;
+                        return true;
+                    }
+                }
+            }
+
+            // 마우스 이동 중 드래그 시작
+            if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
+            {
+                sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
+                                       static_cast<float>(mouseMoved->position.y));
+
+                // 드래그 중이면 호버 슬롯 하이라이트
+                if (m_dragDropManager->isDragging())
+                {
+                    int hoverSlot = getSlotAtPosition(mousePos);
+                    for (size_t i = 0; i < m_slots.size(); ++i)
+                    {
+                        m_slots[i]->setHighlight(static_cast<int>(i) == hoverSlot);
+                    }
+                }
+
+                if (m_isPotentialDrag && !m_dragDropManager->isDragging())
+                {
+                    float distance = std::sqrt(
+                        std::pow(mousePos.x - m_dragStartPos.x, 2) +
+                        std::pow(mousePos.y - m_dragStartPos.y, 2)
+                    );
+
+                    if (distance > DRAG_THRESHOLD)
+                    {
+                        // 드래그 시작
+                        OptionalItem item = m_items[m_dragStartSlot];
+                        if (item)
+                        {
+                            m_dragDropManager->startDrag(*item, this, m_dragStartSlot, mousePos);
+                            // 원래 슬롯에서 아이템 제거 (데이터 + 시각적)
+                            m_items[m_dragStartSlot] = std::nullopt;
+                            m_slots[m_dragStartSlot]->setItem(std::nullopt);
+                        }
+                        m_isPotentialDrag = false;
+                        return true;
+                    }
+                }
+            }
+        }
 
         // 스크롤바 드래그 처리 (Window보다 먼저)
         if (const auto* mousePressed = event.getIf<sf::Event::MouseButtonPressed>())
@@ -111,6 +230,22 @@ public:
                 updateScrollThumbPosition();
                 return true;
             }
+
+            // 슬롯 호버 업데이트
+            sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
+                                   static_cast<float>(mouseMoved->position.y));
+            for (size_t i = 0; i < m_slots.size(); ++i)
+            {
+                sf::Vector2f slotPos = m_slots[i]->getPosition();
+                if (slotPos.y + SLOT_SIZE > contentPos.y && slotPos.y < contentPos.y + contentSize.y)
+                {
+                    m_slots[i]->setHovered(m_slots[i]->contains(mousePos));
+                }
+                else
+                {
+                    m_slots[i]->clearHover();
+                }
+            }
         }
 
         // 윈도우 이벤트 처리 (드래그, 닫기)
@@ -136,24 +271,27 @@ public:
             }
         }
 
-        // 슬롯 버튼 이벤트 (보이는 영역 내에서만)
+        return false;
+    }
+
+    int getSlotAtPosition(const sf::Vector2f& pos) const
+    {
+        sf::Vector2f contentPos = m_window.getContentPosition();
+        sf::Vector2f contentSize = m_window.getContentSize();
+
         for (size_t i = 0; i < m_slots.size(); ++i)
         {
             sf::Vector2f slotPos = m_slots[i]->getPosition();
+            // 보이는 영역 내에서만
             if (slotPos.y + SLOT_SIZE > contentPos.y && slotPos.y < contentPos.y + contentSize.y)
             {
-                if (m_slots[i]->handleEvent(event))
+                if (m_slots[i]->contains(pos))
                 {
-                    return true;
+                    return static_cast<int>(i);
                 }
             }
-            else
-            {
-                m_slots[i]->clearHover();
-            }
         }
-
-        return false;
+        return -1;
     }
 
     bool isVisible() const { return m_window.isVisible(); }
@@ -164,6 +302,15 @@ public:
         m_window.setPosition(position);
         updateScrollbarPosition();
         updateSlotPositions();
+    }
+
+    void clearAllHighlights()
+    {
+        for (auto& slot : m_slots)
+        {
+            slot->setHighlight(false);
+            slot->clearHover();
+        }
     }
 
 private:
@@ -209,8 +356,8 @@ private:
 
     static sf::Vector2f calculateWindowSize()
     {
-        float width = GRID_COLS * (SLOT_SIZE + SLOT_PADDING) + SLOT_PADDING + 15.f; // +15 for scrollbar
-        float height = 5 * (SLOT_SIZE + SLOT_PADDING) + SLOT_PADDING + 25.f; // 5개 행만 표시 + 타이틀바
+        float width = GRID_COLS * (SLOT_SIZE + SLOT_PADDING) + SLOT_PADDING + 15.f;
+        float height = 5 * (SLOT_SIZE + SLOT_PADDING) + SLOT_PADDING + 25.f;
         return {width, height};
     }
 
@@ -227,24 +374,10 @@ private:
                 float x = contentPos.x + SLOT_PADDING + col * (SLOT_SIZE + SLOT_PADDING);
                 float y = contentPos.y + SLOT_PADDING + row * (SLOT_SIZE + SLOT_PADDING) - m_scrollOffset;
 
-                auto slot = std::make_shared<Button>(
+                auto slot = std::make_shared<InventorySlot>(
                     sf::Vector2f{x, y},
-                    sf::Vector2f{SLOT_SIZE, SLOT_SIZE},
-                    m_font,
-                    std::to_string(index + 1)
+                    sf::Vector2f{SLOT_SIZE, SLOT_SIZE}
                 );
-
-                slot->setNormalColor(sf::Color{70, 70, 70});
-                slot->setHoverColor(sf::Color{90, 90, 90});
-                slot->setPressedColor(sf::Color{50, 50, 50});
-
-                int slotIndex = index;
-                slot->setCallback([this, slotIndex]() {
-                    if (m_slotCallback)
-                    {
-                        m_slotCallback(slotIndex);
-                    }
-                });
 
                 m_slots.push_back(slot);
             }
@@ -303,12 +436,18 @@ private:
 
     const sf::Font& m_font;
     Window m_window;
-    std::vector<std::shared_ptr<Button>> m_slots;
-    std::function<void(int)> m_slotCallback;
+    std::vector<std::shared_ptr<InventorySlot>> m_slots;
+    std::vector<OptionalItem> m_items;
+    DragDropManager* m_dragDropManager = nullptr;
 
     sf::RectangleShape m_scrollbar;
     sf::RectangleShape m_scrollThumb;
     float m_scrollOffset = 0.f;
     bool m_isDraggingScroll = false;
     float m_scrollDragStart = 0.f;
+
+    // 드래그 관련
+    bool m_isPotentialDrag = false;
+    sf::Vector2f m_dragStartPos;
+    int m_dragStartSlot = -1;
 };
