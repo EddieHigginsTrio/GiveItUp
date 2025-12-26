@@ -45,6 +45,24 @@ public:
         m_dragDropManager = manager;
     }
 
+    void setItemsTexture(const sf::Texture* texture)
+    {
+        m_itemsTexture = texture;
+        for (auto& slot : m_slots)
+        {
+            slot->setItemsTexture(texture);
+        }
+    }
+
+    void setWeaponsTexture(const sf::Texture* texture)
+    {
+        m_weaponsTexture = texture;
+        for (auto& slot : m_slots)
+        {
+            slot->setWeaponsTexture(texture);
+        }
+    }
+
     void setItem(int index, const OptionalItem& item)
     {
         if (index >= 0 && index < static_cast<int>(m_items.size()))
@@ -439,6 +457,9 @@ private:
     std::vector<std::shared_ptr<InventorySlot>> m_slots;
     std::vector<OptionalItem> m_items;
     DragDropManager* m_dragDropManager = nullptr;
+
+    const sf::Texture* m_itemsTexture = nullptr;
+    const sf::Texture* m_weaponsTexture = nullptr;
 
     sf::RectangleShape m_scrollbar;
     sf::RectangleShape m_scrollThumb;

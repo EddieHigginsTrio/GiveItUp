@@ -7,6 +7,9 @@
 class InventorySlot : public sf::Drawable
 {
 public:
+    static constexpr int SPRITE_WIDTH = 352;   // 스프라이트 타일 너비 (2816/8)
+    static constexpr int SPRITE_HEIGHT = 384;  // 스프라이트 타일 높이 (1536/4)
+
     InventorySlot(const sf::Vector2f& position, const sf::Vector2f& size)
     {
         m_background.setPosition(position);
@@ -19,12 +22,22 @@ public:
         updateItemRectPosition();
     }
 
+    void setItemsTexture(const sf::Texture* texture) { m_itemsTexture = texture; }
+    void setWeaponsTexture(const sf::Texture* texture) { m_weaponsTexture = texture; }
+
     void setItem(const OptionalItem& item)
     {
         m_item = item;
         if (m_item)
         {
-            m_itemRect.setFillColor(m_item->color);
+            if (m_item->hasSprite())
+            {
+                updateItemSprite();
+            }
+            else
+            {
+                m_itemRect.setFillColor(m_item->color);
+            }
         }
     }
 
@@ -86,7 +99,14 @@ private:
         target.draw(m_background, states);
         if (m_item)
         {
-            target.draw(m_itemRect, states);
+            if (m_item->hasSprite() && m_itemSprite.has_value())
+            {
+                target.draw(*m_itemSprite, states);
+            }
+            else
+            {
+                target.draw(m_itemRect, states);
+            }
         }
     }
 
@@ -95,6 +115,48 @@ private:
         sf::Vector2f pos = m_background.getPosition();
         sf::Vector2f size = m_background.getSize();
         m_itemRect.setPosition({pos.x + 4.f, pos.y + 4.f});
+
+        // 스프라이트 위치도 업데이트
+        updateSpritePosition();
+    }
+
+    void updateSpritePosition()
+    {
+        if (!m_itemSprite.has_value()) return;
+
+        sf::Vector2f pos = m_background.getPosition();
+        sf::Vector2f size = m_background.getSize();
+        // 스프라이트를 슬롯 중앙에 배치
+        float scaleX = (size.x - 8.f) / SPRITE_WIDTH;
+        float scaleY = (size.y - 8.f) / SPRITE_HEIGHT;
+        float scale = std::min(scaleX, scaleY);
+        m_itemSprite->setPosition({pos.x + 4.f, pos.y + 4.f});
+        m_itemSprite->setScale({scale, scale});
+    }
+
+    void updateItemSprite()
+    {
+        if (!m_item || !m_item->hasSprite())
+        {
+            m_itemSprite = std::nullopt;
+            return;
+        }
+
+        const sf::Texture* texture = nullptr;
+        if (m_item->sheetType == SpriteSheetType::Items)
+            texture = m_itemsTexture;
+        else if (m_item->sheetType == SpriteSheetType::Weapons)
+            texture = m_weaponsTexture;
+
+        if (texture)
+        {
+            m_itemSprite = sf::Sprite(*texture);
+            m_itemSprite->setTextureRect(sf::IntRect(
+                {m_item->spriteX * SPRITE_WIDTH, m_item->spriteY * SPRITE_HEIGHT},
+                {SPRITE_WIDTH, SPRITE_HEIGHT}
+            ));
+            updateSpritePosition();
+        }
     }
 
     void updateColor()
@@ -109,7 +171,11 @@ private:
 
     sf::RectangleShape m_background;
     sf::RectangleShape m_itemRect;
+    std::optional<sf::Sprite> m_itemSprite;
     OptionalItem m_item;
+
+    const sf::Texture* m_itemsTexture = nullptr;
+    const sf::Texture* m_weaponsTexture = nullptr;
 
     bool m_isHovered = false;
     bool m_isHighlighted = false;

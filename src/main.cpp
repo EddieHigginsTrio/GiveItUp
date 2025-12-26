@@ -1,6 +1,7 @@
 #include <SFML/Graphics.hpp>
 #include "ButtonManager.hpp"
 #include "InventoryWindow.hpp"
+#include "EquipmentWindow.hpp"
 #include <iostream>
 
 int main()
@@ -16,70 +17,205 @@ int main()
         return -1;
     }
 
+    // 스프라이트 시트 로드
+    sf::Texture itemsTexture;
+    if (!itemsTexture.loadFromFile("src/items.png"))
+    {
+        std::cerr << "Failed to load items.png!" << std::endl;
+        return -1;
+    }
+
+    sf::Texture weaponsTexture;
+    if (!weaponsTexture.loadFromFile("src/weapons.png"))
+    {
+        std::cerr << "Failed to load weapons.png!" << std::endl;
+        return -1;
+    }
+
     // 드래그 앤 드롭 매니저
     DragDropManager dragDropManager;
+    dragDropManager.setItemsTexture(&itemsTexture);
+    dragDropManager.setWeaponsTexture(&weaponsTexture);
 
     // 가방 인벤토리 (왼쪽)
     InventoryWindow bagInventory({50.f, 100.f}, font, "Bag");
     bagInventory.setDragDropManager(&dragDropManager);
+    bagInventory.setItemsTexture(&itemsTexture);
+    bagInventory.setWeaponsTexture(&weaponsTexture);
 
     // 창고 인벤토리 (오른쪽)
     InventoryWindow storageInventory({400.f, 100.f}, font, "Storage");
     storageInventory.setDragDropManager(&dragDropManager);
+    storageInventory.setItemsTexture(&itemsTexture);
+    storageInventory.setWeaponsTexture(&weaponsTexture);
+
+    // 장비 창 (오른쪽 상단)
+    EquipmentWindow equipmentWindow({750.f, 100.f}, font);
+    equipmentWindow.setDragDropManager(&dragDropManager);
+    equipmentWindow.setItemsTexture(&itemsTexture);
+    equipmentWindow.setWeaponsTexture(&weaponsTexture);
 
     // 테스트용 아이템 배치 (가방에 몇 개 아이템 추가)
-    bagInventory.setItem(0, Item(1, "Sword", sf::Color::Red));
-    bagInventory.setItem(1, Item(2, "Shield", sf::Color::Blue));
-    bagInventory.setItem(2, Item(3, "Potion", sf::Color::Green));
-    bagInventory.setItem(5, Item(4, "Gold", sf::Color::Yellow));
-    bagInventory.setItem(10, Item(5, "Armor", sf::Color::Cyan));
-    bagInventory.setItem(15, Item(6, "Helmet", sf::Color::Magenta));
+    // weapons.png 스프라이트 시트 기준:
+    // Row 0: 검들 (0-4), 도끼 (5-6), 활/석궁 (7)
+    // Row 1: 헬멧들 (0-3), 마법사 모자 (4), 방패들 (5-7)
+    // Row 2: 반지 (0-3), 목걸이 (4-5), 망토 (6), 갑옷들 (7)
+    // Row 3: 무기들 (0-4), 장갑들 (6-7)
+    // Row 4: 부츠들 (0-1), 장갑 (6-7)
 
-    // 드롭 콜백 설정
+    // 장비 가능한 아이템들 (스프라이트 사용)
+    bagInventory.setItem(0, Item(1, "Iron Sword", SpriteSheetType::Weapons, 0, 0, EquipmentSlot::Weapon));
+    bagInventory.setItem(1, Item(2, "Wood Shield", SpriteSheetType::Weapons, 5, 1, EquipmentSlot::Shield));
+    bagInventory.setItem(2, Item(3, "Gold Sword", SpriteSheetType::Weapons, 1, 0, EquipmentSlot::Weapon));
+    bagInventory.setItem(5, Item(4, "Blue Sword", SpriteSheetType::Weapons, 2, 0, EquipmentSlot::Weapon));
+    bagInventory.setItem(10, Item(5, "Chain Armor", SpriteSheetType::Weapons, 7, 2, EquipmentSlot::Armor));
+    bagInventory.setItem(15, Item(6, "Iron Helmet", SpriteSheetType::Weapons, 2, 1, EquipmentSlot::Helmet));
+    bagInventory.setItem(20, Item(7, "Iron Gloves", SpriteSheetType::Weapons, 6, 4, EquipmentSlot::Gloves));
+    bagInventory.setItem(25, Item(8, "Leather Boots", SpriteSheetType::Weapons, 0, 4, EquipmentSlot::Boots));
+
+    // items.png에서 의류 아이템들
+    bagInventory.setItem(3, Item(9, "Leather Vest", SpriteSheetType::Items, 0, 0, EquipmentSlot::Armor));
+    bagInventory.setItem(6, Item(10, "Chain Mail", SpriteSheetType::Items, 2, 0, EquipmentSlot::Armor));
+    bagInventory.setItem(11, Item(11, "Blue Robe", SpriteSheetType::Items, 4, 0, EquipmentSlot::Armor));
+
+    // 추가 무기들
+    bagInventory.setItem(7, Item(12, "Battle Axe", SpriteSheetType::Weapons, 5, 0, EquipmentSlot::Weapon));
+    bagInventory.setItem(12, Item(13, "Silver Shield", SpriteSheetType::Weapons, 7, 1, EquipmentSlot::Shield));
+    bagInventory.setItem(16, Item(14, "Wizard Hat", SpriteSheetType::Weapons, 3, 1, EquipmentSlot::Helmet));
+
+    // 드롭 콜백 설정 (인벤토리 -> 인벤토리)
     dragDropManager.setDropCallback([&](InventoryWindow* sourceInv, int sourceSlot,
                                          InventoryWindow* targetInv, int targetSlot) {
         // 드래그 중인 아이템 가져오기
         Item draggedItem = dragDropManager.getDraggedItem();
+        DragSource source = dragDropManager.getSource();
 
         if (targetSlot < 0)
         {
             // 드롭 실패 - 원래 위치로 복구
-            sourceInv->setItem(sourceSlot, draggedItem);
+            if (source.type == DragSourceType::Inventory && sourceInv)
+            {
+                sourceInv->setItem(sourceSlot, draggedItem);
+            }
+            else if (source.type == DragSourceType::Equipment && source.equipment)
+            {
+                source.equipment->setItemByIndex(sourceSlot, draggedItem);
+            }
             std::cout << "Drop cancelled - item returned to original slot" << std::endl;
             return;
         }
 
-        if (sourceInv == targetInv && sourceSlot == targetSlot)
+        // 인벤토리에서 인벤토리로
+        if (source.type == DragSourceType::Inventory && sourceInv)
         {
-            // 같은 슬롯에 드롭 - 원래 위치로 복구
-            sourceInv->setItem(sourceSlot, draggedItem);
-            return;
+            if (sourceInv == targetInv && sourceSlot == targetSlot)
+            {
+                // 같은 슬롯에 드롭 - 원래 위치로 복구
+                sourceInv->setItem(sourceSlot, draggedItem);
+                return;
+            }
+
+            // 타겟 슬롯에 아이템이 있으면 교환
+            OptionalItem targetItem = targetInv->getItem(targetSlot);
+
+            // 드래그한 아이템을 타겟에 배치
+            targetInv->setItem(targetSlot, draggedItem);
+
+            // 타겟에 아이템이 있었으면 소스로 이동
+            if (targetItem)
+            {
+                sourceInv->setItem(sourceSlot, targetItem);
+            }
+
+            std::cout << "Moved " << draggedItem.name;
+            if (sourceInv != targetInv)
+            {
+                std::cout << " between inventories";
+            }
+            std::cout << std::endl;
         }
-
-        // 타겟 슬롯에 아이템이 있으면 교환
-        OptionalItem targetItem = targetInv->getItem(targetSlot);
-
-        // 드래그한 아이템을 타겟에 배치
-        targetInv->setItem(targetSlot, draggedItem);
-
-        // 타겟에 아이템이 있었으면 소스로 이동
-        if (targetItem)
+        // 장비에서 인벤토리로
+        else if (source.type == DragSourceType::Equipment && source.equipment)
         {
-            sourceInv->setItem(sourceSlot, targetItem);
-        }
+            // 타겟 슬롯에 아이템이 있으면 교환 (장비 가능한 경우만)
+            OptionalItem targetItem = targetInv->getItem(targetSlot);
 
-        std::cout << "Moved " << draggedItem.name;
-        if (sourceInv != targetInv)
-        {
-            std::cout << " between inventories";
+            // 드래그한 아이템을 인벤토리에 배치
+            targetInv->setItem(targetSlot, draggedItem);
+
+            // 타겟에 아이템이 있었으면 장비로 이동 (장비 가능한 경우)
+            if (targetItem && source.equipment->canEquipItem(*targetItem, sourceSlot))
+            {
+                source.equipment->setItemByIndex(sourceSlot, targetItem);
+            }
+
+            std::cout << "Unequipped " << draggedItem.name << std::endl;
         }
-        std::cout << std::endl;
     });
 
     // 하이라이트 클리어 콜백 설정
     dragDropManager.setClearHighlightsCallback([&]() {
         bagInventory.clearAllHighlights();
         storageInventory.clearAllHighlights();
+        equipmentWindow.clearAllHighlights();
+    });
+
+    // 장비 드롭 콜백 설정
+    dragDropManager.setEquipmentDropCallback([&](const DragSource& source,
+                                                  EquipmentWindow* targetEquip, int targetSlot) {
+        Item draggedItem = dragDropManager.getDraggedItem();
+
+        // 드롭 실패 - 원래 위치로 복구
+        if (targetSlot < 0 || targetEquip == nullptr)
+        {
+            if (source.type == DragSourceType::Inventory && source.inventory)
+            {
+                source.inventory->setItem(source.slotIndex, draggedItem);
+            }
+            else if (source.type == DragSourceType::Equipment && source.equipment)
+            {
+                source.equipment->setItemByIndex(source.slotIndex, draggedItem);
+            }
+            std::cout << "Equipment drop cancelled" << std::endl;
+            return;
+        }
+
+        // 장비 슬롯에 맞는지 확인
+        if (!targetEquip->canEquipItem(draggedItem, targetSlot))
+        {
+            // 원래 위치로 복구
+            if (source.type == DragSourceType::Inventory && source.inventory)
+            {
+                source.inventory->setItem(source.slotIndex, draggedItem);
+            }
+            else if (source.type == DragSourceType::Equipment && source.equipment)
+            {
+                source.equipment->setItemByIndex(source.slotIndex, draggedItem);
+            }
+            std::cout << "Cannot equip " << draggedItem.name << " in this slot" << std::endl;
+            return;
+        }
+
+        // 타겟 장비 슬롯에 아이템이 있으면 교환
+        OptionalItem targetItem = targetEquip->getItem(targetSlot);
+
+        // 드래그한 아이템을 장비 슬롯에 배치
+        targetEquip->setItemByIndex(targetSlot, draggedItem);
+
+        // 타겟에 아이템이 있었으면 소스로 이동
+        if (targetItem)
+        {
+            if (source.type == DragSourceType::Inventory && source.inventory)
+            {
+                source.inventory->setItem(source.slotIndex, targetItem);
+            }
+            else if (source.type == DragSourceType::Equipment && source.equipment)
+            {
+                source.equipment->setItemByIndex(source.slotIndex, targetItem);
+            }
+        }
+
+        std::cout << "Equipped " << draggedItem.name << std::endl;
     });
 
     // 버튼 매니저 생성
@@ -110,6 +246,12 @@ int main()
                 continue;
             }
 
+            // 장비 창 이벤트 처리
+            if (equipmentWindow.handleEvent(*event))
+            {
+                continue;
+            }
+
             // 드래그 중 빈 공간에서 마우스 릴리즈 - 취소 처리
             if (const auto* mouseReleased = event->getIf<sf::Event::MouseButtonReleased>())
             {
@@ -127,6 +269,7 @@ int main()
         renderWindow.draw(buttonManager);
         renderWindow.draw(bagInventory);
         renderWindow.draw(storageInventory);
+        renderWindow.draw(equipmentWindow);
         renderWindow.draw(dragDropManager);  // 고스트 이미지 (항상 최상위)
         renderWindow.display();
     }
