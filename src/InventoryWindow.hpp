@@ -7,6 +7,7 @@
 #include <memory>
 #include <functional>
 #include <algorithm>
+#include <iostream>
 
 class InventoryWindow : public sf::Drawable
 {
@@ -15,7 +16,6 @@ public:
     static constexpr int GRID_ROWS = 10;
     static constexpr float SLOT_SIZE = 50.f;
     static constexpr float SLOT_PADDING = 5.f;
-    static constexpr float DRAG_THRESHOLD = 5.f;
 
     InventoryWindow(const sf::Vector2f& position, const sf::Font& font, const std::string& title = "Inventory")
         : m_font(font)
@@ -100,94 +100,66 @@ public:
         sf::Vector2f contentSize = m_window.getContentSize();
         sf::FloatRect contentBounds(contentPos, contentSize);
 
-        // 드래그 앤 드롭 처리
+        // 드래그 앤 드롭 처리 (클릭-토글 방식)
         if (m_dragDropManager)
         {
-            // 드래그 중 마우스 릴리즈 - 드롭 처리
-            if (const auto* mouseReleased = event.getIf<sf::Event::MouseButtonReleased>())
-            {
-                if (mouseReleased->button == sf::Mouse::Button::Left)
-                {
-                    sf::Vector2f mousePos(static_cast<float>(mouseReleased->position.x),
-                                           static_cast<float>(mouseReleased->position.y));
-
-                    if (m_dragDropManager->isDragging())
-                    {
-                        // 이 인벤토리 영역 안에서 드롭했는지 확인
-                        if (m_window.contains(mousePos))
-                        {
-                            int targetSlot = getSlotAtPosition(mousePos);
-                            m_dragDropManager->endDrag(this, targetSlot);
-                            m_isPotentialDrag = false;
-                            return true;
-                        }
-                        // 이 인벤토리 밖이면 다른 인벤토리가 처리하도록 패스
-                        return false;
-                    }
-
-                    if (m_isPotentialDrag)
-                    {
-                        m_isPotentialDrag = false;
-                        return true;
-                    }
-                }
-            }
-
-            // 드래그 시작 감지
+            // 클릭 처리 - 드래그 시작 또는 드롭
             if (const auto* mousePressed = event.getIf<sf::Event::MouseButtonPressed>())
             {
+                std::cout << "[InventoryWindow] mousePressed detected" << std::endl;
                 if (mousePressed->button == sf::Mouse::Button::Left)
                 {
                     sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
                                            static_cast<float>(mousePressed->position.y));
 
+                    std::cout << "[InventoryWindow] isDragging: " << m_dragDropManager->isDragging() << std::endl;
+
+                    // 드래그 중이면 드롭 처리
+                    if (m_dragDropManager->isDragging())
+                    {
+                        std::cout << "[InventoryWindow] Attempting drop, contains: " << m_window.contains(mousePos) << std::endl;
+                        if (m_window.contains(mousePos))
+                        {
+                            int targetSlot = getSlotAtPosition(mousePos);
+                            std::cout << "[InventoryWindow] Dropping to slot: " << targetSlot << std::endl;
+                            m_dragDropManager->endDrag(this, targetSlot);
+                            return true;
+                        }
+                        // 이 인벤토리 밖이면 다른 인벤토리가 처리하도록 패스
+                        std::cout << "[InventoryWindow] Outside window, passing to next handler" << std::endl;
+                        return false;
+                    }
+
+                    // 드래그 시작
                     int slotIndex = getSlotAtPosition(mousePos);
+                    std::cout << "[InventoryWindow] slotIndex: " << slotIndex << std::endl;
                     if (slotIndex >= 0 && m_slots[slotIndex]->hasItem())
                     {
-                        m_isPotentialDrag = true;
-                        m_dragStartPos = mousePos;
-                        m_dragStartSlot = slotIndex;
+                        OptionalItem item = m_items[slotIndex];
+                        if (item)
+                        {
+                            std::cout << "[InventoryWindow] Starting drag from slot " << slotIndex << std::endl;
+                            m_dragDropManager->startDrag(*item, this, slotIndex, mousePos);
+                            m_items[slotIndex] = std::nullopt;
+                            m_slots[slotIndex]->setItem(std::nullopt);
+                        }
                         return true;
                     }
                 }
             }
 
-            // 마우스 이동 중 드래그 시작
+            // 마우스 이동 중 호버 슬롯 하이라이트
             if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
             {
                 sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
                                        static_cast<float>(mouseMoved->position.y));
 
-                // 드래그 중이면 호버 슬롯 하이라이트
                 if (m_dragDropManager->isDragging())
                 {
                     int hoverSlot = getSlotAtPosition(mousePos);
                     for (size_t i = 0; i < m_slots.size(); ++i)
                     {
                         m_slots[i]->setHighlight(static_cast<int>(i) == hoverSlot);
-                    }
-                }
-
-                if (m_isPotentialDrag && !m_dragDropManager->isDragging())
-                {
-                    float distance = std::sqrt(
-                        std::pow(mousePos.x - m_dragStartPos.x, 2) +
-                        std::pow(mousePos.y - m_dragStartPos.y, 2)
-                    );
-
-                    if (distance > DRAG_THRESHOLD)
-                    {
-                        // 드래그 시작
-                        OptionalItem item = m_items[m_dragStartSlot];
-                        if (item)
-                        {
-                            m_dragDropManager->startDrag(*item, this, m_dragStartSlot, mousePos);
-                            // 원래 슬롯에서 아이템 제거 (데이터 + 시각적)
-                            m_items[m_dragStartSlot] = std::nullopt;
-                            m_slots[m_dragStartSlot]->setItem(std::nullopt);
-                        }
-                        m_isPotentialDrag = false;
-                        return true;
                     }
                 }
             }
@@ -466,9 +438,4 @@ private:
     float m_scrollOffset = 0.f;
     bool m_isDraggingScroll = false;
     float m_scrollDragStart = 0.f;
-
-    // 드래그 관련
-    bool m_isPotentialDrag = false;
-    sf::Vector2f m_dragStartPos;
-    int m_dragStartSlot = -1;
 };

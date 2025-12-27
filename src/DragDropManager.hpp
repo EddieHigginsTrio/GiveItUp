@@ -198,7 +198,8 @@ public:
         {
             updateMousePosition({static_cast<float>(mouseMoved->position.x),
                                   static_cast<float>(mouseMoved->position.y)});
-            return true;
+            // false를 반환해서 인벤토리에서도 하이라이트 처리 가능하게 함
+            return false;
         }
         else if (const auto* keyPressed = event.getIf<sf::Event::KeyPressed>())
         {

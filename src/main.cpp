@@ -252,15 +252,8 @@ int main()
                 continue;
             }
 
-            // 드래그 중 빈 공간에서 마우스 릴리즈 - 취소 처리
-            if (const auto* mouseReleased = event->getIf<sf::Event::MouseButtonReleased>())
-            {
-                if (mouseReleased->button == sf::Mouse::Button::Left && dragDropManager.isDragging())
-                {
-                    dragDropManager.cancelDrag();
-                    continue;
-                }
-            }
+            // 클릭-토글 방식이므로 mouseReleased에서 취소하지 않음
+            // 드래그 취소는 ESC 키 또는 빈 공간 클릭으로 처리
 
             buttonManager.handleEvent(*event);
         }

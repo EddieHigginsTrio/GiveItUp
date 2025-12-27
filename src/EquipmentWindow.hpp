@@ -12,7 +12,6 @@ class EquipmentWindow : public sf::Drawable
 public:
     static constexpr float SLOT_SIZE = 50.f;
     static constexpr float AVATAR_SIZE = 100.f;
-    static constexpr float DRAG_THRESHOLD = 5.f;
 
     EquipmentWindow(const sf::Vector2f& position, const sf::Font& font)
         : m_font(font)
@@ -109,17 +108,18 @@ public:
     {
         if (!m_window.isVisible()) return false;
 
-        // 드래그 앤 드롭 처리
+        // 드래그 앤 드롭 처리 (클릭-토글 방식)
         if (m_dragDropManager)
         {
-            // 드래그 중 마우스 릴리즈 - 드롭 처리
-            if (const auto* mouseReleased = event.getIf<sf::Event::MouseButtonReleased>())
+            // 클릭 처리 - 드래그 시작 또는 드롭
+            if (const auto* mousePressed = event.getIf<sf::Event::MouseButtonPressed>())
             {
-                if (mouseReleased->button == sf::Mouse::Button::Left)
+                if (mousePressed->button == sf::Mouse::Button::Left)
                 {
-                    sf::Vector2f mousePos(static_cast<float>(mouseReleased->position.x),
-                                           static_cast<float>(mouseReleased->position.y));
+                    sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
+                                           static_cast<float>(mousePressed->position.y));
 
+                    // 드래그 중이면 드롭 처리
                     if (m_dragDropManager->isDragging())
                     {
                         if (m_window.contains(mousePos))
@@ -134,52 +134,39 @@ public:
                                 {
                                     // 장비 불가 - 취소 처리
                                     m_dragDropManager->cancelDrag();
-                                    m_isPotentialDrag = false;
                                     return true;
                                 }
                             }
 
                             m_dragDropManager->endDragToEquipment(this, targetSlot);
-                            m_isPotentialDrag = false;
                             return true;
                         }
+                        // 이 창 밖이면 다른 창이 처리하도록 패스
                         return false;
                     }
 
-                    if (m_isPotentialDrag)
-                    {
-                        m_isPotentialDrag = false;
-                        return true;
-                    }
-                }
-            }
-
-            // 드래그 시작 감지
-            if (const auto* mousePressed = event.getIf<sf::Event::MouseButtonPressed>())
-            {
-                if (mousePressed->button == sf::Mouse::Button::Left)
-                {
-                    sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
-                                           static_cast<float>(mousePressed->position.y));
-
+                    // 드래그 시작
                     int slotIndex = getSlotAtPosition(mousePos);
                     if (slotIndex >= 0 && m_slots[slotIndex]->hasItem())
                     {
-                        m_isPotentialDrag = true;
-                        m_dragStartPos = mousePos;
-                        m_dragStartSlot = slotIndex;
+                        OptionalItem item = m_items[slotIndex];
+                        if (item)
+                        {
+                            m_dragDropManager->startDragFromEquipment(*item, this, slotIndex, mousePos);
+                            m_items[slotIndex] = std::nullopt;
+                            m_slots[slotIndex]->setItem(std::nullopt);
+                        }
                         return true;
                     }
                 }
             }
 
-            // 마우스 이동 중 드래그 시작
+            // 마우스 이동 중 호버 슬롯 하이라이트
             if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
             {
                 sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
                                        static_cast<float>(mouseMoved->position.y));
 
-                // 드래그 중이면 호버 슬롯 하이라이트
                 if (m_dragDropManager->isDragging())
                 {
                     int hoverSlot = getSlotAtPosition(mousePos);
@@ -192,27 +179,6 @@ public:
                             canEquip = canEquipItem(draggedItem, hoverSlot);
                         }
                         m_slots[i]->setHighlight(static_cast<int>(i) == hoverSlot && canEquip);
-                    }
-                }
-
-                if (m_isPotentialDrag && !m_dragDropManager->isDragging())
-                {
-                    float distance = std::sqrt(
-                        std::pow(mousePos.x - m_dragStartPos.x, 2) +
-                        std::pow(mousePos.y - m_dragStartPos.y, 2)
-                    );
-
-                    if (distance > DRAG_THRESHOLD)
-                    {
-                        OptionalItem item = m_items[m_dragStartSlot];
-                        if (item)
-                        {
-                            m_dragDropManager->startDragFromEquipment(*item, this, m_dragStartSlot, mousePos);
-                            m_items[m_dragStartSlot] = std::nullopt;
-                            m_slots[m_dragStartSlot]->setItem(std::nullopt);
-                        }
-                        m_isPotentialDrag = false;
-                        return true;
                     }
                 }
             }
@@ -370,9 +336,4 @@ private:
     const sf::Texture* m_weaponsTexture = nullptr;
 
     sf::RectangleShape m_avatarRect;
-
-    // 드래그 관련
-    bool m_isPotentialDrag = false;
-    sf::Vector2f m_dragStartPos;
-    int m_dragStartSlot = -1;
 };
