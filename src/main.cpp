@@ -21,6 +21,9 @@ int main()
     // 플레이어 생성 (왼쪽 상단 근처, 확인용)
     Player player({100.f, 100.f});
 
+    // 장비 변경 추적용
+    OptionalItem lastEquippedWeapon;
+
     // 적 생성
     std::vector<Enemy> enemies;
     enemies.emplace_back(sf::Vector2f{400.f, 100.f});
@@ -58,6 +61,9 @@ int main()
         std::cerr << "Failed to load weapons.png!" << std::endl;
         return -1;
     }
+
+    // 플레이어에 무기 텍스처 설정
+    player.setWeaponTexture(&weaponsTexture);
 
     // 드래그 앤 드롭 매니저
     DragDropManager dragDropManager;
@@ -338,6 +344,33 @@ int main()
         }
         // 델타 타임 계산
         float deltaTime = clock.restart().asSeconds();
+
+        // 장비창에서 무기 변경 감지 및 플레이어에 반영
+        OptionalItem currentWeapon = equipmentWindow.getItem(EquipmentSlot::Weapon);
+        bool weaponChanged = false;
+        if (currentWeapon.has_value() != lastEquippedWeapon.has_value())
+        {
+            weaponChanged = true;
+        }
+        else if (currentWeapon.has_value() && lastEquippedWeapon.has_value())
+        {
+            weaponChanged = (currentWeapon->id != lastEquippedWeapon->id);
+        }
+
+        if (weaponChanged)
+        {
+            player.equipWeapon(currentWeapon);
+            lastEquippedWeapon = currentWeapon;
+            if (currentWeapon)
+            {
+                std::cout << "Weapon equipped: " << currentWeapon->name
+                          << " (sprite: " << currentWeapon->spriteX << ", " << currentWeapon->spriteY << ")" << std::endl;
+            }
+            else
+            {
+                std::cout << "Weapon unequipped" << std::endl;
+            }
+        }
 
         // 플레이어 입력 및 업데이트 (창이 포커스를 가지고 있을 때만)
         if (windowHasFocus)

@@ -2,8 +2,21 @@
 
 #include <SFML/Graphics.hpp>
 #include <deque>
+#include <cmath>
+#include <optional>
+#include <iostream>
+#include "Item.hpp"
 
 class TileMap;
+
+// 공격 타입
+enum class AttackType
+{
+    None,
+    Slash,    // Z: 위에서 아래로 내려치기
+    Thrust,   // X: 앞으로 찌르기
+    Uppercut  // C: 아래에서 위로 올려치기
+};
 
 class Player : public sf::Drawable
 {
@@ -22,12 +35,25 @@ public:
     static constexpr int MAX_AFTERIMAGES = 8;            // 최대 잔상 개수
     static constexpr float KNOCKBACK_DURATION = 0.3f;    // 넉백 지속 시간
     static constexpr float INVINCIBLE_DURATION = 1.0f;   // 무적 시간
-    static constexpr float ATTACK_DURATION = 0.2f;       // 공격 지속 시간
+    static constexpr float ATTACK_DURATION = 0.25f;      // 공격 지속 시간 (스윙)
     static constexpr float ATTACK_COOLDOWN = 0.3f;       // 공격 쿨다운
     static constexpr float ATTACK_DAMAGE = 20.f;         // 공격력
     static constexpr float ATTACK_KNOCKBACK = 300.f;     // 공격 넉백
-    static constexpr float ATTACK_RANGE_X = 60.f;        // 공격 범위 (가로)
-    static constexpr float ATTACK_RANGE_Y = 40.f;        // 공격 범위 (세로)
+    static constexpr float ATTACK_RANGE = 50.f;          // 무기 길이 (공격 범위)
+    static constexpr float WEAPON_SIZE = 40.f;           // 무기 스프라이트 크기
+
+    // 공격 타입별 각도 설정
+    // Slash (Z): 위에서 아래로 내려치기
+    static constexpr float SLASH_START_ANGLE = -120.f;
+    static constexpr float SLASH_END_ANGLE = 30.f;
+    // Thrust (X): 앞으로 찌르기
+    static constexpr float THRUST_START_ANGLE = -30.f;
+    static constexpr float THRUST_END_ANGLE = 0.f;
+    // Uppercut (C): 아래에서 위로 올려치기
+    static constexpr float UPPERCUT_START_ANGLE = 60.f;
+    static constexpr float UPPERCUT_END_ANGLE = -90.f;
+    static constexpr int WEAPON_SPRITE_WIDTH = 352;      // weapons.png 타일 너비 (2816/8)
+    static constexpr int WEAPON_SPRITE_HEIGHT = 384;     // weapons.png 타일 높이 (1536/4)
 
     Player(const sf::Vector2f& position)
     {
@@ -76,10 +102,20 @@ public:
             startDash();
         }
 
-        // Z 키로 공격
+        // Z 키: 내려치기 (Slash)
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) && m_attackCooldownTimer <= 0.f && !m_isAttacking)
         {
-            startAttack();
+            startAttack(AttackType::Slash);
+        }
+        // X 키: 찌르기 (Thrust)
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::X) && m_attackCooldownTimer <= 0.f && !m_isAttacking)
+        {
+            startAttack(AttackType::Thrust);
+        }
+        // C 키: 올려치기 (Uppercut)
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::C) && m_attackCooldownTimer <= 0.f && !m_isAttacking)
+        {
+            startAttack(AttackType::Uppercut);
         }
     }
 
@@ -127,27 +163,94 @@ public:
     float getHealth() const { return m_health; }
     float getMaxHealth() const { return m_maxHealth; }
 
+    // 무기 장착 설정
+    void setWeaponTexture(const sf::Texture* texture)
+    {
+        m_weaponTexture = texture;
+    }
+
+    void equipWeapon(const OptionalItem& weapon)
+    {
+        m_equippedWeapon = weapon;
+        m_hasWeapon = weapon && weapon->hasSprite() && m_weaponTexture;
+    }
+
+    bool hasWeaponEquipped() const { return m_hasWeapon; }
+
     // 공격 관련
     bool isAttacking() const { return m_isAttacking; }
     float getAttackDamage() const { return ATTACK_DAMAGE; }
     float getAttackKnockback() const { return ATTACK_KNOCKBACK; }
 
-    // 공격 히트박스 반환
+    // 현재 스윙 각도 계산 (공격 타입별)
+    float getCurrentSwingAngle() const
+    {
+        if (!m_isAttacking) return 15.f;  // 기본 대기 각도 (약간 아래로 향함)
+
+        // 공격 진행도 (0 ~ 1)
+        float progress = 1.f - (m_attackTimer / ATTACK_DURATION);
+        // 이징 함수 적용 (빠르게 시작, 느리게 끝)
+        float easedProgress = 1.f - std::pow(1.f - progress, 2.f);
+
+        // 공격 타입별 시작/끝 각도
+        float startAngle = 0.f;
+        float endAngle = 0.f;
+
+        switch (m_currentAttackType)
+        {
+        case AttackType::Slash:
+            startAngle = SLASH_START_ANGLE;
+            endAngle = SLASH_END_ANGLE;
+            break;
+        case AttackType::Thrust:
+            startAngle = THRUST_START_ANGLE;
+            endAngle = THRUST_END_ANGLE;
+            break;
+        case AttackType::Uppercut:
+            startAngle = UPPERCUT_START_ANGLE;
+            endAngle = UPPERCUT_END_ANGLE;
+            break;
+        default:
+            return -45.f;
+        }
+
+        // 시작 각도에서 끝 각도로 보간
+        float angle = startAngle + (endAngle - startAngle) * easedProgress;
+        return angle;
+    }
+
+    AttackType getCurrentAttackType() const { return m_currentAttackType; }
+
+    // 스윙 단계별 히트박스 반환 (3단계)
     sf::FloatRect getAttackHitbox() const
     {
         if (!m_isAttacking) return sf::FloatRect({0, 0}, {0, 0});
 
-        sf::Vector2f pos = m_shape.getPosition();
-        float hitboxX = m_facingRight ? pos.x + WIDTH : pos.x - ATTACK_RANGE_X;
-        float hitboxY = pos.y + (HEIGHT - ATTACK_RANGE_Y) / 2.f;
+        float progress = 1.f - (m_attackTimer / ATTACK_DURATION);
+        float angle = getCurrentSwingAngle();
 
-        return sf::FloatRect({hitboxX, hitboxY}, {ATTACK_RANGE_X, ATTACK_RANGE_Y});
+        // 각도를 라디안으로 변환
+        float radians = angle * 3.14159f / 180.f;
+
+        // 플레이어 중심에서 무기 끝 위치 계산
+        sf::Vector2f center = getCenter();
+        float weaponTipX = center.x + std::cos(radians) * ATTACK_RANGE * (m_facingRight ? 1.f : -1.f);
+        float weaponTipY = center.y + std::sin(radians) * ATTACK_RANGE;
+
+        // 히트박스 크기 (무기 끝 부분)
+        float hitboxSize = 30.f;
+
+        return sf::FloatRect(
+            {weaponTipX - hitboxSize / 2.f, weaponTipY - hitboxSize / 2.f},
+            {hitboxSize, hitboxSize}
+        );
     }
 
 private:
-    void startAttack()
+    void startAttack(AttackType type)
     {
         m_isAttacking = true;
+        m_currentAttackType = type;
         m_attackTimer = ATTACK_DURATION;
         m_attackCooldownTimer = ATTACK_COOLDOWN;
         m_hasHitEnemy = false;  // 이번 공격에서 아직 적을 안 맞춤
@@ -302,17 +405,47 @@ private:
         }
         target.draw(m_shape, states);
 
-        // 공격 히트박스 시각화
-        if (m_isAttacking)
+        // 무기 그리기
+        if (m_hasWeapon && m_weaponTexture && m_equippedWeapon && m_equippedWeapon->hasSprite())
         {
-            sf::FloatRect hitbox = getAttackHitbox();
-            sf::RectangleShape attackVisual({hitbox.size.x, hitbox.size.y});
-            attackVisual.setPosition({hitbox.position.x, hitbox.position.y});
-            attackVisual.setFillColor(sf::Color{255, 255, 100, 100});  // 반투명 노란색
-            attackVisual.setOutlineThickness(2.f);
-            attackVisual.setOutlineColor(sf::Color{255, 200, 50});
-            target.draw(attackVisual, states);
+            // 무기 위치: 플레이어 손 위치
+            sf::Vector2f pos = m_shape.getPosition();
+            sf::Vector2f handPos;
+
+            if (m_facingRight)
+            {
+                handPos = {pos.x + WIDTH - 5.f, pos.y + HEIGHT * 0.5f};
+            }
+            else
+            {
+                handPos = {pos.x + 5.f, pos.y + HEIGHT * 0.5f};
+            }
+
+            float angle = getCurrentSwingAngle();
+            if (!m_facingRight) angle = -angle;
+
+            sf::IntRect textureRect(
+                {m_equippedWeapon->spriteX * WEAPON_SPRITE_WIDTH, m_equippedWeapon->spriteY * WEAPON_SPRITE_HEIGHT},
+                {WEAPON_SPRITE_WIDTH, WEAPON_SPRITE_HEIGHT}
+            );
+            sf::Sprite weaponToDraw(*m_weaponTexture, textureRect);
+            // 원점을 손잡이 위치로 (왼쪽 하단)
+            weaponToDraw.setOrigin({WEAPON_SPRITE_WIDTH * 0.15f, WEAPON_SPRITE_HEIGHT * 0.85f});
+            // 스케일 조정 (352x384 -> WEAPON_SIZE)
+            float scale = WEAPON_SIZE / static_cast<float>(WEAPON_SPRITE_WIDTH);
+            weaponToDraw.setScale({scale, scale});
+            weaponToDraw.setPosition(handPos);
+
+            if (!m_facingRight)
+            {
+                weaponToDraw.setScale({-scale, scale});
+            }
+
+            weaponToDraw.setRotation(sf::degrees(angle));
+
+            target.draw(weaponToDraw, states);
         }
+
     }
 
     void applyGravity(float deltaTime)
@@ -355,7 +488,14 @@ private:
 
     // 공격 관련
     bool m_isAttacking = false;
+    AttackType m_currentAttackType = AttackType::None;
     float m_attackTimer = 0.f;
     float m_attackCooldownTimer = 0.f;
     bool m_hasHitEnemy = false;
+
+    // 무기 관련
+    const sf::Texture* m_weaponTexture = nullptr;
+    OptionalItem m_equippedWeapon;
+    mutable std::optional<sf::Sprite> m_weaponSprite;
+    bool m_hasWeapon = false;
 };
