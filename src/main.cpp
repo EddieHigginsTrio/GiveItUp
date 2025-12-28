@@ -2,12 +2,30 @@
 #include "ButtonManager.hpp"
 #include "InventoryWindow.hpp"
 #include "EquipmentWindow.hpp"
+#include "Player.hpp"
+#include "TileMap.hpp"
 #include <iostream>
 
 int main()
 {
     auto renderWindow = sf::RenderWindow(sf::VideoMode({1920u, 1080u}), "CMake SFML Project");
     renderWindow.setFramerateLimit(144);
+
+    // 타일맵 생성 (60x33 타일, 바닥이 화면 안에 보이도록)
+    TileMap tileMap(60, 33);
+    tileMap.createSimpleLevel();
+
+    // 플레이어 생성 (왼쪽 상단 근처, 확인용)
+    Player player({100.f, 100.f});
+
+    // 델타 타임 계산용 클럭
+    sf::Clock clock;
+
+    // 카메라 (게임 월드용)
+    sf::View gameView(sf::FloatRect({0.f, 0.f}, {1920.f, 1080.f}));
+
+    // UI용 뷰 (고정)
+    sf::View uiView(sf::FloatRect({0.f, 0.f}, {1920.f, 1080.f}));
 
     // 폰트 로드
     sf::Font font;
@@ -230,6 +248,13 @@ int main()
                 renderWindow.close();
             }
 
+            // 클릭 좌표 로깅
+            if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
+            {
+                std::cout << "Mouse clicked at: (" << mousePressed->position.x
+                          << ", " << mousePressed->position.y << ")" << std::flush << std::endl;
+            }
+
             // 드래그 매니저 이벤트 처리 (ESC로 취소, 마우스 이동 등)
             if (dragDropManager.handleEvent(*event))
             {
@@ -258,7 +283,26 @@ int main()
             buttonManager.handleEvent(*event);
         }
 
+        // 델타 타임 계산
+        float deltaTime = clock.restart().asSeconds();
+
+        // 플레이어 입력 및 업데이트
+        player.handleInput();
+        player.update(deltaTime, &tileMap);
+
+        // 카메라를 플레이어 중심으로 이동
+        sf::Vector2f playerCenter = player.getPosition() + sf::Vector2f(Player::WIDTH / 2.f, Player::HEIGHT / 2.f);
+        gameView.setCenter(playerCenter);
+
         renderWindow.clear(sf::Color{30, 30, 30});
+
+        // 게임 월드 렌더링 (카메라 적용)
+        renderWindow.setView(gameView);
+        renderWindow.draw(tileMap);
+        renderWindow.draw(player);
+
+        // UI 렌더링 (고정 뷰)
+        renderWindow.setView(uiView);
         renderWindow.draw(buttonManager);
         renderWindow.draw(bagInventory);
         renderWindow.draw(storageInventory);
