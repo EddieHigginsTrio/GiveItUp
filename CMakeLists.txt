@@ -12,9 +12,9 @@ FetchContent_Declare(SFML
     SYSTEM)
 FetchContent_MakeAvailable(SFML)
 
-add_executable(main src/main.cpp src/Player.cpp)
+add_executable(main src/main.cpp src/Player.cpp src/Enemy.cpp)
 target_compile_features(main PRIVATE cxx_std_17)
 target_link_libraries(main PRIVATE SFML::Graphics)
 
 # 리소스 파일을 빌드 폴더로 복사
-file(COPY src/items.png src/weapons.png DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+file(COPY items.png weapons.png DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})

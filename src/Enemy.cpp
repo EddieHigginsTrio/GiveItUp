@@ -1,15 +1,18 @@
-#include "Player.hpp"
+#include "Enemy.hpp"
 #include "TileMap.hpp"
-#include <algorithm>
 
-void Player::update(float deltaTime, const TileMap* tileMap)
+void Enemy::update(float deltaTime, const TileMap* tileMap)
 {
-    updateDash(deltaTime);
+    if (!m_isAlive) return;
 
-    // 대쉬 중에는 중력 무시
-    if (!m_isDashing)
+    updateKnockback(deltaTime);
+    applyGravity(deltaTime);
+
+    // 넉백 중에는 패트롤 이동 안함
+    if (!m_isKnockback)
     {
-        applyGravity(deltaTime);
+        // 좌우 패트롤 이동
+        m_velocity.x = m_movingRight ? MOVE_SPEED : -MOVE_SPEED;
     }
 
     // X축 이동
@@ -19,10 +22,8 @@ void Player::update(float deltaTime, const TileMap* tileMap)
     // X축 충돌 검사
     if (tileMap)
     {
-        sf::FloatRect bounds = m_shape.getGlobalBounds();
-        float testX = (m_velocity.x > 0) ? newX + WIDTH : newX;
+        float testX = m_movingRight ? newX + WIDTH : newX;
 
-        // 플레이어의 상단, 중간, 하단에서 충돌 검사
         bool collisionX = false;
         for (float testY : {pos.y + 1.f, pos.y + HEIGHT / 2.f, pos.y + HEIGHT - 1.f})
         {
@@ -36,20 +37,25 @@ void Player::update(float deltaTime, const TileMap* tileMap)
             }
         }
 
+        // 벽에 부딪히면 방향 전환
         if (collisionX)
         {
-            // 벽에 붙이기
-            if (m_velocity.x > 0)
+            m_movingRight = !m_movingRight;
+            newX = pos.x;
+        }
+
+        // 낭떠러지 감지 (앞에 바닥이 없으면 방향 전환)
+        if (m_isOnGround)
+        {
+            float checkX = m_movingRight ? pos.x + WIDTH + 5.f : pos.x - 5.f;
+            int tileX = static_cast<int>(checkX) / TileMap::TILE_SIZE;
+            int tileY = static_cast<int>(pos.y + HEIGHT + 5.f) / TileMap::TILE_SIZE;
+
+            if (!tileMap->isSolid(tileX, tileY) && !tileMap->isPlatform(tileX, tileY))
             {
-                int tileX = static_cast<int>(newX + WIDTH) / TileMap::TILE_SIZE;
-                newX = static_cast<float>(tileX * TileMap::TILE_SIZE) - WIDTH;
+                m_movingRight = !m_movingRight;
+                newX = pos.x;
             }
-            else if (m_velocity.x < 0)
-            {
-                int tileX = static_cast<int>(newX) / TileMap::TILE_SIZE;
-                newX = static_cast<float>((tileX + 1) * TileMap::TILE_SIZE);
-            }
-            m_velocity.x = 0.f;
         }
     }
 
@@ -59,14 +65,12 @@ void Player::update(float deltaTime, const TileMap* tileMap)
     pos = m_shape.getPosition();
     float newY = pos.y + m_velocity.y * deltaTime;
 
-    // Y축 충돌 검사
     m_isOnGround = false;
 
     if (tileMap)
     {
         float testY = (m_velocity.y > 0) ? newY + HEIGHT : newY;
 
-        // 플레이어의 왼쪽, 중간, 오른쪽에서 충돌 검사
         bool collisionY = false;
         for (float testX : {pos.x + 1.f, pos.x + WIDTH / 2.f, pos.x + WIDTH - 1.f})
         {
@@ -79,12 +83,11 @@ void Player::update(float deltaTime, const TileMap* tileMap)
                 break;
             }
 
-            // 플랫폼 충돌 (아래로 떨어질 때만)
+            // 플랫폼 충돌
             if (m_velocity.y > 0 && tileMap->isPlatform(tileX, tileY))
             {
-                // 이전 위치에서 플랫폼 위에 있었는지 확인
                 float platformTop = static_cast<float>(tileY * TileMap::TILE_SIZE);
-                if (pos.y + HEIGHT <= platformTop + 5.f)  // 약간의 여유
+                if (pos.y + HEIGHT <= platformTop + 5.f)
                 {
                     collisionY = true;
                     break;
@@ -96,14 +99,12 @@ void Player::update(float deltaTime, const TileMap* tileMap)
         {
             if (m_velocity.y > 0)
             {
-                // 바닥에 착지
                 int tileY = static_cast<int>(newY + HEIGHT) / TileMap::TILE_SIZE;
                 newY = static_cast<float>(tileY * TileMap::TILE_SIZE) - HEIGHT;
                 m_isOnGround = true;
             }
             else if (m_velocity.y < 0)
             {
-                // 천장에 부딪힘
                 int tileY = static_cast<int>(newY) / TileMap::TILE_SIZE;
                 newY = static_cast<float>((tileY + 1) * TileMap::TILE_SIZE);
             }

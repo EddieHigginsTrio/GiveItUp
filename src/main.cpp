@@ -3,8 +3,10 @@
 #include "InventoryWindow.hpp"
 #include "EquipmentWindow.hpp"
 #include "Player.hpp"
+#include "Enemy.hpp"
 #include "TileMap.hpp"
 #include <iostream>
+#include <vector>
 
 int main()
 {
@@ -18,6 +20,12 @@ int main()
 
     // 플레이어 생성 (왼쪽 상단 근처, 확인용)
     Player player({100.f, 100.f});
+
+    // 적 생성
+    std::vector<Enemy> enemies;
+    enemies.emplace_back(sf::Vector2f{400.f, 100.f});
+    enemies.emplace_back(sf::Vector2f{700.f, 100.f});
+    enemies.emplace_back(sf::Vector2f{1000.f, 100.f});
 
     // 델타 타임 계산용 클럭
     sf::Clock clock;
@@ -338,15 +346,49 @@ int main()
         }
         player.update(deltaTime, &tileMap);
 
-        // 카메라를 플레이어 중심으로 이동
+        // 적 업데이트 및 충돌 감지
+        for (auto& enemy : enemies)
+        {
+            enemy.update(deltaTime, &tileMap);
+
+            // 플레이어와 적의 충돌 감지 (적 -> 플레이어)
+            if (enemy.isAlive())
+            {
+                auto intersection = player.getBounds().findIntersection(enemy.getBounds());
+                if (intersection.has_value())
+                {
+                    player.takeHit(enemy.getDamage(), enemy.getKnockbackForce(), enemy.getCenter());
+                }
+            }
+
+            // 플레이어 공격 충돌 감지 (플레이어 -> 적)
+            if (player.isAttacking() && enemy.isAlive())
+            {
+                sf::FloatRect attackHitbox = player.getAttackHitbox();
+                auto attackHit = attackHitbox.findIntersection(enemy.getBounds());
+                if (attackHit.has_value())
+                {
+                    enemy.takeDamage(player.getAttackDamage(), player.getAttackKnockback(), player.getCenter());
+                }
+            }
+        }
+
+        // 카메라를 플레이어 중심으로 부드럽게 이동 (lerp)
         sf::Vector2f playerCenter = player.getPosition() + sf::Vector2f(Player::WIDTH / 2.f, Player::HEIGHT / 2.f);
-        gameView.setCenter(playerCenter);
+        sf::Vector2f currentCenter = gameView.getCenter();
+        float smoothSpeed = 5.f;  // 카메라 스무딩 속도 (높을수록 빠름)
+        sf::Vector2f newCenter = currentCenter + (playerCenter - currentCenter) * smoothSpeed * deltaTime;
+        gameView.setCenter(newCenter);
 
         renderWindow.clear(sf::Color{30, 30, 30});
 
         // 게임 월드 렌더링 (카메라 적용)
         renderWindow.setView(gameView);
         renderWindow.draw(tileMap);
+        for (const auto& enemy : enemies)
+        {
+            renderWindow.draw(enemy);
+        }
         renderWindow.draw(player);
 
         // UI 렌더링 (고정 뷰)
