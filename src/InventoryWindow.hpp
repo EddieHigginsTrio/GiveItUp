@@ -30,8 +30,8 @@ public:
         m_scrollbar.setSize({10.f, contentHeight});
         m_scrollbar.setFillColor(sf::Color{60, 60, 60});
 
-        m_scrollThumb.setSize({10.f, 50.f});
         m_scrollThumb.setFillColor(sf::Color{100, 100, 100});
+        // 썸네일 크기는 updateScrollbarPosition에서 동적으로 계산
 
         // 아이템 배열 초기화
         m_items.resize(GRID_COLS * GRID_ROWS);
@@ -43,6 +43,16 @@ public:
     void setDragDropManager(DragDropManager* manager)
     {
         m_dragDropManager = manager;
+    }
+
+    void setRenderWindow(sf::RenderWindow* window)
+    {
+        m_window.setRenderWindow(window);
+    }
+
+    void setUIView(const sf::View* view)
+    {
+        m_window.setUIView(view);
     }
 
     void setItemsTexture(const sf::Texture* texture)
@@ -109,10 +119,11 @@ public:
                 std::cout << "[InventoryWindow] mousePressed detected" << std::endl;
                 if (mousePressed->button == sf::Mouse::Button::Left)
                 {
-                    sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
-                                           static_cast<float>(mousePressed->position.y));
+                    // 픽셀 좌표를 UI 뷰 좌표로 변환
+                    sf::Vector2f mousePos = m_dragDropManager->mapPixelToUI(mousePressed->position);
 
                     std::cout << "[InventoryWindow] isDragging: " << m_dragDropManager->isDragging() << std::endl;
+                    std::cout << "[InventoryWindow] UI coords: (" << mousePos.x << ", " << mousePos.y << ")" << std::endl;
 
                     // 드래그 중이면 드롭 처리
                     if (m_dragDropManager->isDragging())
@@ -151,8 +162,7 @@ public:
             // 마우스 이동 중 호버 슬롯 하이라이트
             if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
             {
-                sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
-                                       static_cast<float>(mouseMoved->position.y));
+                sf::Vector2f mousePos = m_dragDropManager->mapPixelToUI(mouseMoved->position);
 
                 if (m_dragDropManager->isDragging())
                 {
@@ -170,8 +180,10 @@ public:
         {
             if (mousePressed->button == sf::Mouse::Button::Left)
             {
-                sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
-                                       static_cast<float>(mousePressed->position.y));
+                sf::Vector2f mousePos = m_dragDropManager ?
+                    m_dragDropManager->mapPixelToUI(mousePressed->position) :
+                    sf::Vector2f(static_cast<float>(mousePressed->position.x),
+                                 static_cast<float>(mousePressed->position.y));
                 if (m_scrollThumb.getGlobalBounds().contains(mousePos))
                 {
                     m_isDraggingScroll = true;
@@ -204,9 +216,14 @@ public:
         }
         else if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
         {
+            sf::Vector2f mousePos = m_dragDropManager ?
+                m_dragDropManager->mapPixelToUI(mouseMoved->position) :
+                sf::Vector2f(static_cast<float>(mouseMoved->position.x),
+                             static_cast<float>(mouseMoved->position.y));
+
             if (m_isDraggingScroll)
             {
-                float mouseY = static_cast<float>(mouseMoved->position.y);
+                float mouseY = mousePos.y;
                 float newThumbY = mouseY - m_scrollDragStart;
 
                 float minY = m_scrollbar.getPosition().y;
@@ -222,8 +239,6 @@ public:
             }
 
             // 슬롯 호버 업데이트
-            sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
-                                   static_cast<float>(mouseMoved->position.y));
             for (size_t i = 0; i < m_slots.size(); ++i)
             {
                 sf::Vector2f slotPos = m_slots[i]->getPosition();
@@ -249,14 +264,19 @@ public:
         // 마우스 휠 스크롤
         if (const auto* mouseWheel = event.getIf<sf::Event::MouseWheelScrolled>())
         {
-            sf::Vector2f mousePos(static_cast<float>(mouseWheel->position.x),
-                                   static_cast<float>(mouseWheel->position.y));
+            sf::Vector2f mousePos = m_dragDropManager ?
+                m_dragDropManager->mapPixelToUI(mouseWheel->position) :
+                sf::Vector2f(static_cast<float>(mouseWheel->position.x),
+                             static_cast<float>(mouseWheel->position.y));
             if (contentBounds.contains(mousePos))
             {
-                m_scrollOffset -= mouseWheel->delta * 20.f;
+                // 휠 위로 = delta 양수 = 스크롤 위로 (오프셋 감소)
+                // 휠 아래 = delta 음수 = 스크롤 아래로 (오프셋 증가)
+                m_scrollOffset -= mouseWheel->delta * 30.f;
                 clampScroll();
                 updateSlotPositions();
                 updateScrollThumbPosition();
+                std::cout << "[Scroll] offset: " << m_scrollOffset << " / max: " << getMaxScroll() << std::endl;
                 return true;
             }
         }
@@ -311,35 +331,22 @@ private:
         // 윈도우 그리기
         target.draw(m_window, states);
 
-        // 클리핑을 위한 뷰 설정
-        sf::View originalView = target.getView();
+        // 클리핑 없이 슬롯 그리기 (디버깅용)
         sf::Vector2f contentPos = m_window.getContentPosition();
         sf::Vector2f contentSize = m_window.getContentSize();
 
-        // 스크롤바 영역 제외한 콘텐츠 영역
-        float contentWidth = contentSize.x - 15.f;
-
-        sf::View clipView;
-        clipView.setCenter({contentPos.x + contentWidth / 2.f, contentPos.y + contentSize.y / 2.f});
-        clipView.setSize({contentWidth, contentSize.y});
-
-        sf::Vector2u windowSize = target.getSize();
-        clipView.setViewport(sf::FloatRect(
-            {contentPos.x / windowSize.x, contentPos.y / windowSize.y},
-            {contentWidth / windowSize.x, contentSize.y / windowSize.y}
-        ));
-
-        target.setView(clipView);
-
-        // 슬롯 그리기
+        // 보이는 영역 내의 슬롯만 그리기
         for (const auto& slot : m_slots)
         {
-            target.draw(*slot, states);
+            sf::Vector2f slotPos = slot->getPosition();
+            // 콘텐츠 영역 내에 있는 슬롯만 렌더링
+            if (slotPos.y + SLOT_SIZE > contentPos.y && slotPos.y < contentPos.y + contentSize.y)
+            {
+                target.draw(*slot, states);
+            }
         }
 
-        target.setView(originalView);
-
-        // 스크롤바 그리기 (클리핑 외부)
+        // 스크롤바 그리기
         target.draw(m_scrollbar, states);
         target.draw(m_scrollThumb, states);
     }
@@ -356,6 +363,10 @@ private:
         m_slots.clear();
         sf::Vector2f contentPos = m_window.getContentPosition();
 
+        std::cout << "[InventoryWindow] Content position: (" << contentPos.x << ", " << contentPos.y << ")" << std::endl;
+        std::cout << "[InventoryWindow] Content size: (" << m_window.getContentSize().x << ", " << m_window.getContentSize().y << ")" << std::endl;
+        std::cout << "[InventoryWindow] Scroll offset: " << m_scrollOffset << std::endl;
+
         for (int row = 0; row < GRID_ROWS; ++row)
         {
             for (int col = 0; col < GRID_COLS; ++col)
@@ -363,6 +374,11 @@ private:
                 int index = row * GRID_COLS + col;
                 float x = contentPos.x + SLOT_PADDING + col * (SLOT_SIZE + SLOT_PADDING);
                 float y = contentPos.y + SLOT_PADDING + row * (SLOT_SIZE + SLOT_PADDING) - m_scrollOffset;
+
+                if (row == 0 && col == 0)
+                {
+                    std::cout << "[InventoryWindow] First slot position: (" << x << ", " << y << ")" << std::endl;
+                }
 
                 auto slot = std::make_shared<InventorySlot>(
                     sf::Vector2f{x, y},
@@ -398,6 +414,13 @@ private:
         m_scrollbar.setPosition({contentPos.x + contentSize.x - 12.f, contentPos.y + 2.f});
         m_scrollbar.setSize({10.f, contentSize.y - 4.f});
 
+        // 썸 크기를 보이는 영역 비율에 맞게 조절
+        float totalHeight = GRID_ROWS * (SLOT_SIZE + SLOT_PADDING) + SLOT_PADDING;
+        float visibleRatio = contentSize.y / totalHeight;
+        float minThumbHeight = 20.f;
+        float thumbHeight = std::max(minThumbHeight, m_scrollbar.getSize().y * visibleRatio);
+        m_scrollThumb.setSize({10.f, thumbHeight});
+
         updateScrollThumbPosition();
     }
 
@@ -405,9 +428,15 @@ private:
     {
         float maxScroll = getMaxScroll();
         float scrollRatio = (maxScroll > 0) ? (m_scrollOffset / maxScroll) : 0.f;
+        scrollRatio = std::clamp(scrollRatio, 0.f, 1.f);
 
         float trackHeight = m_scrollbar.getSize().y - m_scrollThumb.getSize().y;
         float thumbY = m_scrollbar.getPosition().y + scrollRatio * trackHeight;
+
+        // 스크롤바 범위 내로 제한
+        float minY = m_scrollbar.getPosition().y;
+        float maxY = minY + m_scrollbar.getSize().y - m_scrollThumb.getSize().y;
+        thumbY = std::clamp(thumbY, minY, maxY);
 
         m_scrollThumb.setPosition({m_scrollbar.getPosition().x, thumbY});
     }

@@ -10,6 +10,7 @@ int main()
 {
     auto renderWindow = sf::RenderWindow(sf::VideoMode({1920u, 1080u}), "CMake SFML Project");
     renderWindow.setFramerateLimit(144);
+    renderWindow.requestFocus();  // 창 생성 후 포커스 요청
 
     // 타일맵 생성 (60x33 타일, 바닥이 화면 안에 보이도록)
     TileMap tileMap(60, 33);
@@ -37,14 +38,14 @@ int main()
 
     // 스프라이트 시트 로드
     sf::Texture itemsTexture;
-    if (!itemsTexture.loadFromFile("src/items.png"))
+    if (!itemsTexture.loadFromFile("items.png"))
     {
         std::cerr << "Failed to load items.png!" << std::endl;
         return -1;
     }
 
     sf::Texture weaponsTexture;
-    if (!weaponsTexture.loadFromFile("src/weapons.png"))
+    if (!weaponsTexture.loadFromFile("weapons.png"))
     {
         std::cerr << "Failed to load weapons.png!" << std::endl;
         return -1;
@@ -54,24 +55,35 @@ int main()
     DragDropManager dragDropManager;
     dragDropManager.setItemsTexture(&itemsTexture);
     dragDropManager.setWeaponsTexture(&weaponsTexture);
+    dragDropManager.setRenderWindow(&renderWindow);
+    dragDropManager.setUIView(&uiView);
 
     // 가방 인벤토리 (왼쪽)
     InventoryWindow bagInventory({50.f, 100.f}, font, "Bag");
     bagInventory.setDragDropManager(&dragDropManager);
     bagInventory.setItemsTexture(&itemsTexture);
     bagInventory.setWeaponsTexture(&weaponsTexture);
+    bagInventory.setRenderWindow(&renderWindow);
+    bagInventory.setUIView(&uiView);
+    bagInventory.setVisible(false);  // 기본값: 숨김
 
     // 창고 인벤토리 (오른쪽)
     InventoryWindow storageInventory({400.f, 100.f}, font, "Storage");
     storageInventory.setDragDropManager(&dragDropManager);
     storageInventory.setItemsTexture(&itemsTexture);
     storageInventory.setWeaponsTexture(&weaponsTexture);
+    storageInventory.setRenderWindow(&renderWindow);
+    storageInventory.setUIView(&uiView);
+    storageInventory.setVisible(false);  // 기본값: 숨김
 
     // 장비 창 (오른쪽 상단)
     EquipmentWindow equipmentWindow({750.f, 100.f}, font);
     equipmentWindow.setDragDropManager(&dragDropManager);
     equipmentWindow.setItemsTexture(&itemsTexture);
     equipmentWindow.setWeaponsTexture(&weaponsTexture);
+    equipmentWindow.setRenderWindow(&renderWindow);
+    equipmentWindow.setUIView(&uiView);
+    equipmentWindow.setVisible(false);  // 기본값: 숨김
 
     // 테스트용 아이템 배치 (가방에 몇 개 아이템 추가)
     // weapons.png 스프라이트 시트 기준:
@@ -239,6 +251,9 @@ int main()
     // 버튼 매니저 생성
     ButtonManager buttonManager;
 
+    // 창 포커스 상태 (이벤트 기반 추적, 초기값 true)
+    bool windowHasFocus = true;
+
     while (renderWindow.isOpen())
     {
         while (const std::optional event = renderWindow.pollEvent())
@@ -248,11 +263,42 @@ int main()
                 renderWindow.close();
             }
 
+            // 포커스 이벤트 처리
+            if (event->is<sf::Event::FocusGained>())
+            {
+                windowHasFocus = true;
+            }
+            if (event->is<sf::Event::FocusLost>())
+            {
+                windowHasFocus = false;
+            }
+
+            // 키보드 단축키: B = Bag, I = Equipment(Inventory)
+            if (const auto* keyPressed = event->getIf<sf::Event::KeyPressed>())
+            {
+                if (keyPressed->code == sf::Keyboard::Key::B)
+                {
+                    bagInventory.setVisible(!bagInventory.isVisible());
+                }
+                if (keyPressed->code == sf::Keyboard::Key::I)
+                {
+                    equipmentWindow.setVisible(!equipmentWindow.isVisible());
+                }
+            }
+
             // 클릭 좌표 로깅
             if (const auto* mousePressed = event->getIf<sf::Event::MouseButtonPressed>())
             {
-                std::cout << "Mouse clicked at: (" << mousePressed->position.x
-                          << ", " << mousePressed->position.y << ")" << std::flush << std::endl;
+                // 현재 마우스 위치도 함께 출력
+                sf::Vector2i currentMousePos = sf::Mouse::getPosition(renderWindow);
+                sf::Vector2f uiCoords = renderWindow.mapPixelToCoords(mousePressed->position, uiView);
+                sf::Vector2f currentUiCoords = renderWindow.mapPixelToCoords(currentMousePos, uiView);
+                std::cout << "Mouse clicked - Event Pixel: (" << mousePressed->position.x
+                          << ", " << mousePressed->position.y << ") Event UI: ("
+                          << uiCoords.x << ", " << uiCoords.y << ")" << std::endl;
+                std::cout << "              - Current Pixel: (" << currentMousePos.x
+                          << ", " << currentMousePos.y << ") Current UI: ("
+                          << currentUiCoords.x << ", " << currentUiCoords.y << ")" << std::flush << std::endl;
             }
 
             // 드래그 매니저 이벤트 처리 (ESC로 취소, 마우스 이동 등)
@@ -282,12 +328,14 @@ int main()
 
             buttonManager.handleEvent(*event);
         }
-
         // 델타 타임 계산
         float deltaTime = clock.restart().asSeconds();
 
-        // 플레이어 입력 및 업데이트
-        player.handleInput();
+        // 플레이어 입력 및 업데이트 (창이 포커스를 가지고 있을 때만)
+        if (windowHasFocus)
+        {
+            player.handleInput();
+        }
         player.update(deltaTime, &tileMap);
 
         // 카메라를 플레이어 중심으로 이동

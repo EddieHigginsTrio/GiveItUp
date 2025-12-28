@@ -36,6 +36,16 @@ public:
         m_dragDropManager = manager;
     }
 
+    void setRenderWindow(sf::RenderWindow* window)
+    {
+        m_window.setRenderWindow(window);
+    }
+
+    void setUIView(const sf::View* view)
+    {
+        m_window.setUIView(view);
+    }
+
     void setItemsTexture(const sf::Texture* texture)
     {
         m_itemsTexture = texture;
@@ -116,8 +126,8 @@ public:
             {
                 if (mousePressed->button == sf::Mouse::Button::Left)
                 {
-                    sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
-                                           static_cast<float>(mousePressed->position.y));
+                    // 픽셀 좌표를 UI 뷰 좌표로 변환
+                    sf::Vector2f mousePos = m_dragDropManager->mapPixelToUI(mousePressed->position);
 
                     // 드래그 중이면 드롭 처리
                     if (m_dragDropManager->isDragging())
@@ -164,8 +174,7 @@ public:
             // 마우스 이동 중 호버 슬롯 하이라이트
             if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
             {
-                sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
-                                       static_cast<float>(mouseMoved->position.y));
+                sf::Vector2f mousePos = m_dragDropManager->mapPixelToUI(mouseMoved->position);
 
                 if (m_dragDropManager->isDragging())
                 {

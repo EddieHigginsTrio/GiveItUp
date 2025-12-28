@@ -40,12 +40,17 @@ public:
         updateCloseTextPosition();
     }
 
+    void setRenderWindow(sf::RenderWindow* window) { m_renderWindow = window; }
+    void setUIView(const sf::View* view) { m_uiView = view; }
+
+    // 픽셀 좌표를 UI 뷰 좌표로 변환
+    sf::Vector2f mapPixelToUI(const sf::Vector2i& pixel) const;
+
     bool handleEvent(const sf::Event& event)
     {
         if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
         {
-            sf::Vector2f mousePos(static_cast<float>(mouseMoved->position.x),
-                                   static_cast<float>(mouseMoved->position.y));
+            sf::Vector2f mousePos = mapPixelToUI(mouseMoved->position);
 
             // 드래그 중이면 윈도우 이동
             if (m_isDragging)
@@ -68,8 +73,7 @@ public:
         {
             if (mousePressed->button == sf::Mouse::Button::Left)
             {
-                sf::Vector2f mousePos(static_cast<float>(mousePressed->position.x),
-                                       static_cast<float>(mousePressed->position.y));
+                sf::Vector2f mousePos = mapPixelToUI(mousePressed->position);
 
                 // 닫기 버튼 클릭
                 if (m_closeButton.getGlobalBounds().contains(mousePos))
@@ -97,8 +101,7 @@ public:
         {
             if (mouseReleased->button == sf::Mouse::Button::Left)
             {
-                sf::Vector2f mousePos(static_cast<float>(mouseReleased->position.x),
-                                       static_cast<float>(mouseReleased->position.y));
+                sf::Vector2f mousePos = mapPixelToUI(mouseReleased->position);
 
                 if (m_isDragging)
                 {
@@ -241,4 +244,16 @@ private:
     sf::Color m_titleBarColor{60, 60, 60};
     sf::Color m_bodyColor{40, 40, 40};
     sf::Color m_closeButtonColor{80, 80, 80};
+
+    sf::RenderWindow* m_renderWindow = nullptr;
+    const sf::View* m_uiView = nullptr;
 };
+
+inline sf::Vector2f Window::mapPixelToUI(const sf::Vector2i& pixel) const
+{
+    if (m_renderWindow && m_uiView)
+    {
+        return m_renderWindow->mapPixelToCoords(pixel, *m_uiView);
+    }
+    return sf::Vector2f(static_cast<float>(pixel.x), static_cast<float>(pixel.y));
+}

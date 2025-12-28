@@ -33,6 +33,19 @@ public:
 
     DragDropManager() {}
 
+    void setRenderWindow(sf::RenderWindow* window) { m_renderWindow = window; }
+    void setUIView(const sf::View* view) { m_uiView = view; }
+
+    // 픽셀 좌표를 UI 뷰 좌표로 변환
+    sf::Vector2f mapPixelToUI(const sf::Vector2i& pixel) const
+    {
+        if (m_renderWindow && m_uiView)
+        {
+            return m_renderWindow->mapPixelToCoords(pixel, *m_uiView);
+        }
+        return sf::Vector2f(static_cast<float>(pixel.x), static_cast<float>(pixel.y));
+    }
+
     void setDropCallback(DropCallback callback)
     {
         m_dropCallback = std::move(callback);
@@ -196,8 +209,8 @@ public:
 
         if (const auto* mouseMoved = event.getIf<sf::Event::MouseMoved>())
         {
-            updateMousePosition({static_cast<float>(mouseMoved->position.x),
-                                  static_cast<float>(mouseMoved->position.y)});
+            sf::Vector2f uiPos = mapPixelToUI(mouseMoved->position);
+            updateMousePosition(uiPos);
             // false를 반환해서 인벤토리에서도 하이라이트 처리 가능하게 함
             return false;
         }
@@ -251,4 +264,7 @@ private:
 
     const sf::Texture* m_itemsTexture = nullptr;
     const sf::Texture* m_weaponsTexture = nullptr;
+
+    sf::RenderWindow* m_renderWindow = nullptr;
+    const sf::View* m_uiView = nullptr;
 };
