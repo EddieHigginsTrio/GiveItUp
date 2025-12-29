@@ -10,7 +10,7 @@
 
 int main()
 {
-    auto renderWindow = sf::RenderWindow(sf::VideoMode({1920u, 1080u}), "CMake SFML Project");
+    auto renderWindow = sf::RenderWindow(sf::VideoMode({1280u, 720u}), "CMake SFML Project");
     renderWindow.setFramerateLimit(144);
     renderWindow.requestFocus();  // 창 생성 후 포커스 요청
 
@@ -34,10 +34,10 @@ int main()
     sf::Clock clock;
 
     // 카메라 (게임 월드용)
-    sf::View gameView(sf::FloatRect({0.f, 0.f}, {1920.f, 1080.f}));
+    sf::View gameView(sf::FloatRect({0.f, 0.f}, {1280.f, 720.f}));
 
     // UI용 뷰 (고정)
-    sf::View uiView(sf::FloatRect({0.f, 0.f}, {1920.f, 1080.f}));
+    sf::View uiView(sf::FloatRect({0.f, 0.f}, {1280.f, 720.f}));
 
     // 폰트 로드
     sf::Font font;
@@ -411,6 +411,25 @@ int main()
         sf::Vector2f currentCenter = gameView.getCenter();
         float smoothSpeed = 5.f;  // 카메라 스무딩 속도 (높을수록 빠름)
         sf::Vector2f newCenter = currentCenter + (playerCenter - currentCenter) * smoothSpeed * deltaTime;
+
+        // 카메라를 타일맵 범위 내로 제한
+        sf::Vector2f viewSize = gameView.getSize();
+        float mapWidth = tileMap.getWidth() * tileMap.getTileSize();
+        float mapHeight = tileMap.getHeight() * tileMap.getTileSize();
+
+        // 카메라 중심의 최소/최대값 계산
+        float minX = viewSize.x / 2.f;
+        float maxX = mapWidth - viewSize.x / 2.f;
+        float minY = viewSize.y / 2.f;
+        float maxY = mapHeight - viewSize.y / 2.f;
+
+        // 맵이 화면보다 작은 경우 중앙에 고정
+        if (maxX < minX) newCenter.x = mapWidth / 2.f;
+        else newCenter.x = std::max(minX, std::min(newCenter.x, maxX));
+
+        if (maxY < minY) newCenter.y = mapHeight / 2.f;
+        else newCenter.y = std::max(minY, std::min(newCenter.y, maxY));
+
         gameView.setCenter(newCenter);
 
         renderWindow.clear(sf::Color{30, 30, 30});
