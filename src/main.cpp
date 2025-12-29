@@ -14,27 +14,61 @@ int main()
     renderWindow.setFramerateLimit(144);
     renderWindow.requestFocus();  // 창 생성 후 포커스 요청
 
-    // 타일맵 생성 (60x33 타일, 바닥이 화면 안에 보이도록)
+    // 타일맵 생성 및 로드
     TileMap tileMap(60, 33);
-    tileMap.createSimpleLevel();
+    if (!tileMap.loadFromFile("test3.tilemap")) {
+        std::cout << "test.tilemap not found, creating simple level..." << std::endl;
+        tileMap.createSimpleLevel();
+    } else {
+        std::cout << "Loaded test.tilemap successfully!" << std::endl;
+    }
 
-    // 플레이어 생성 (왼쪽 상단 근처, 확인용)
-    Player player({100.f, 100.f});
+    // 플레이어 생성 (타일맵의 spawn 위치 사용)
+    sf::Vector2i playerSpawn = tileMap.getPlayerSpawn();
+    sf::Vector2f playerStartPos;
+    if (playerSpawn.x >= 0 && playerSpawn.y >= 0) {
+        // spawn 위치가 설정되어 있으면 사용 (픽셀 좌표 - 그대로 사용)
+        playerStartPos = sf::Vector2f(static_cast<float>(playerSpawn.x), static_cast<float>(playerSpawn.y));
+        std::cout << "Player spawn from tilemap: (" << playerSpawn.x << ", " << playerSpawn.y << ")" << std::endl;
+    } else {
+        // 설정되지 않았으면 기본값 사용
+        playerStartPos = {100.f, 100.f};
+        std::cout << "Player spawn not set, using default position" << std::endl;
+    }
+    Player player(playerStartPos);
+    std::cout << "Player position: (" << playerStartPos.x << ", " << playerStartPos.y << ")" << std::endl;
+    std::cout << "Map size: " << tileMap.getWidth() * TileMap::TILE_SIZE << " x " << tileMap.getHeight() * TileMap::TILE_SIZE << std::endl;
 
     // 장비 변경 추적용
     OptionalItem lastEquippedWeapon;
 
-    // 적 생성
+    // 적 생성 (타일맵의 enemy spawn 위치 사용)
     std::vector<Enemy> enemies;
-    enemies.emplace_back(sf::Vector2f{400.f, 100.f});
-    enemies.emplace_back(sf::Vector2f{700.f, 100.f});
-    enemies.emplace_back(sf::Vector2f{1000.f, 100.f});
+    const auto& enemySpawns = tileMap.getEnemySpawns();
+    if (!enemySpawns.empty()) {
+        for (const auto& spawn : enemySpawns) {
+            float x = static_cast<float>(std::get<0>(spawn));
+            float y = static_cast<float>(std::get<1>(spawn));
+            enemies.emplace_back(sf::Vector2f{x, y});
+            std::cout << "Enemy spawn from tilemap: (" << x << ", " << y << ")" << std::endl;
+        }
+    } else {
+        // enemy spawn이 없으면 기본 적 생성
+        std::cout << "No enemy spawns in tilemap, creating default enemies" << std::endl;
+        enemies.emplace_back(sf::Vector2f{400.f, 100.f});
+        enemies.emplace_back(sf::Vector2f{700.f, 100.f});
+        enemies.emplace_back(sf::Vector2f{1000.f, 100.f});
+    }
 
     // 델타 타임 계산용 클럭
     sf::Clock clock;
 
-    // 카메라 (게임 월드용)
+    // 카메라 (게임 월드용) - 플레이어 위치를 중심으로 초기화
     sf::View gameView(sf::FloatRect({0.f, 0.f}, {1280.f, 720.f}));
+    // 초기 카메라를 플레이어 중심으로 설정
+    sf::Vector2f initialCameraCenter = playerStartPos + sf::Vector2f(Player::WIDTH / 2.f, Player::HEIGHT / 2.f);
+    gameView.setCenter(initialCameraCenter);
+    std::cout << "Initial camera center: (" << initialCameraCenter.x << ", " << initialCameraCenter.y << ")" << std::endl;
 
     // UI용 뷰 (고정)
     sf::View uiView(sf::FloatRect({0.f, 0.f}, {1280.f, 720.f}));
