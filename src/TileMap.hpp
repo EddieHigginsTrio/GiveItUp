@@ -73,8 +73,8 @@ public:
     // 간단한 레벨 생성
     void createSimpleLevel()
     {
-        // 바닥 오프셋 (300픽셀 위로 = 약 9타일)
-        const int floorOffset = 9;
+        // 바닥을 타일맵 맨 아래에 배치 (카메라 클램핑으로 항상 보임)
+        const int floorOffset = 0;
 
         // 바닥 생성 (위로 올림)
         for (int x = 0; x < m_width; ++x)

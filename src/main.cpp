@@ -62,6 +62,21 @@ int main()
         return -1;
     }
 
+    // 배경 텍스처 로드
+    sf::Texture backgroundTexture;
+    if (!backgroundTexture.loadFromFile("mountain.png"))
+    {
+        std::cerr << "Failed to load mountain.png!" << std::endl;
+        return -1;
+    }
+    sf::Sprite backgroundSprite(backgroundTexture);
+    // 타일맵 크기에 맞게 배경 스케일 조정
+    // 타일맵: 60x33 타일 = 1920x1056 픽셀
+    // mountain.png: 2816x1536 픽셀
+    float mapPixelHeight = 33 * 32;  // 1056
+    float bgScale = mapPixelHeight / 1536.f;
+    backgroundSprite.setScale({bgScale, bgScale});
+
     // 플레이어에 무기 텍스처 설정
     player.setWeaponTexture(&weaponsTexture);
 
@@ -436,6 +451,11 @@ int main()
 
         // 게임 월드 렌더링 (카메라 적용)
         renderWindow.setView(gameView);
+
+        // 배경 렌더링 (월드 좌표 (0,0)에 고정)
+        backgroundSprite.setPosition({0.f, 0.f});
+        renderWindow.draw(backgroundSprite);
+
         renderWindow.draw(tileMap);
         for (const auto& enemy : enemies)
         {
